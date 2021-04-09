@@ -1,7 +1,7 @@
 import React from "react";
 import * as d3 from "d3";
 
-import { VariableSizeList as List } from "react-window";
+import { VariableSizeGrid as List } from "react-window";
 import { head } from "lodash";
 
 import LineChart from "./LineChart";
@@ -11,7 +11,7 @@ import "./App.css";
 const start = 1616397701 * 1000;
 const end = 1617875266 * 1000;
 
-export const getTicks = (scaleFactor = 60) => {
+export const getTicks = (scaleFactor = 30) => {
   const scaleFactorInSeconds = scaleFactor * 60;
   const tickSize = Math.round(scaleFactorInSeconds / 500);
 
@@ -32,10 +32,6 @@ export const getTicks = (scaleFactor = 60) => {
 
 const listRef = React.createRef();
 class ScrollComponent extends React.Component {
-  constructor(props) {
-    super(props);
-  }
-
   state = {
     ticks: [],
   };
@@ -48,7 +44,9 @@ class ScrollComponent extends React.Component {
         ticks,
       },
       () => {
-        listRef.current.scrollToItem(ticks.length);
+        listRef.current.scrollToItem({
+          rowIndex: ticks.length,
+        });
       }
     );
   }
@@ -57,13 +55,13 @@ class ScrollComponent extends React.Component {
     return (
       <React.Fragment>
         <List
-          overscanCount={2}
+          columnCount={2}
+          columnWidth={() => 300}
+          rowHeight={() => 500}
           height={500}
           ref={listRef}
-          itemCount={this.state.ticks.length}
+          rowCount={this.state.ticks.length}
           itemData={this.state.ticks}
-          itemSize={() => 500}
-          //estimatedItemSize={498}
           layout="vertical"
           className="scroll-container"
           width={window.innerWidth}

@@ -3,9 +3,12 @@ import "./App.css";
 
 import * as d3 from "d3";
 import { withFauxDOM } from "react-faux-dom";
-import { head, find } from "lodash";
+import { head, find, flatten, filter } from "lodash";
 import { getTicks } from "./App";
-import { indicators as indicatorsStatic } from "./indicatorHelpers";
+import {
+  indicators as indicatorsStatic,
+  visibleIndicators,
+} from "./indicatorHelpers";
 
 class LineChart extends React.Component {
   state = {
@@ -13,16 +16,16 @@ class LineChart extends React.Component {
     height: 0,
   };
 
-  componentDidMount() {
-    const { index, data } = this.props;
-    const tick = data[index];
+  async componentDidMount() {
+    const { rowIndex, data } = this.props;
+    const tick = data[rowIndex];
 
     const { scaleFactorInSeconds } = getTicks();
 
     const min = tick;
     const max = new Date(tick.getTime() + scaleFactorInSeconds * 1000);
 
-    fetch(
+    const response = await fetch(
       "http://buroptima.tetacom.pro/ru-RU/api/v1/buroptima/indicatorValuesByTime/getInterpolated",
       {
         method: "POST",
@@ -31,66 +34,71 @@ class LineChart extends React.Component {
         },
         body: JSON.stringify({
           wellId: 13,
-          indicatorIds: [2, 5, 9],
+          indicatorIds: flatten(visibleIndicators),
           from: min.toISOString(),
           to: max.toISOString(),
           tickSize: getTicks().tickSize * 200,
         }),
       }
-    )
-      .then((res) => res.json())
-      .then((json) =>
-        this.setState(
-          {
-            indicators: json,
-          },
-          () => {
-            this.update();
-          }
-        )
-      );
+    );
+    const json = await response.json();
+
+    this.setState(
+      {
+        indicators: json,
+      },
+      () => {
+        this.update();
+      }
+    );
   }
 
   update() {
-    const { index, data, connectFauxDOM } = this.props;
+    const { columnIndex, rowIndex, data, connectFauxDOM } = this.props;
     const { scaleFactorInSeconds } = getTicks();
 
     const height = 500;
     const faux = connectFauxDOM("g", "chart");
     const svg = d3.select(faux);
 
-    const tick = data[index];
+    const tick = data[rowIndex];
     const min = tick.getTime();
     const max = tick.getTime() + scaleFactorInSeconds * 1000;
+
+    const offsetX = 110;
 
     const y = d3
       .scaleUtc()
       .domain([new Date(min), new Date(max)])
       .range([0, height])
-      .clamp(false);
+      .clamp(true);
 
-    svg
-      .append("g")
-      .attr("class", "yaxis")
-      .attr("transform", "translate(100,0)")
-      .call(d3.axisLeft(y).ticks(10).tickFormat(d3.utcFormat("%d-%m-%Y %H:%M")))
-      .call((g) => g.select(".tick").remove());
+    if (columnIndex === 0) {
+      svg
+        .append("g")
+        .attr("class", "yaxis")
+        .attr("transform", `translate(${offsetX},0)`)
+        .call(
+          d3.axisLeft(y).ticks(10).tickFormat(d3.utcFormat("%d-%m-%Y %H:%M"))
+        )
+        .call((g) => g.select(".tick").remove());
+    }
 
     const colors = d3
       .scaleSequential()
-      .domain([0, this.state.indicators.length])
+      .domain([columnIndex, this.state.indicators.length])
       .interpolator(d3.interpolateRainbow);
 
     const self = this;
 
     const grid = svg
       .append("g")
-      .attr("transform", "translate(110, 10)")
+      .attr("transform", `translate(${offsetX}, 10)`)
       .attr("class", "grid");
 
     const gridY = svg
       .append("g")
-      .attr("transform", "translate(310, 0)")
+      .attr("transform", `translate(${offsetX + 200},0)`)
       .attr("class", "gridY");
 
     const gridlines = d3
@@ -108,20 +116,20 @@ class LineChart extends React.Component {
     svg.select(".gridY path").remove();
     svg.select(".gridY .tick:first-child").remove();
 
-    const markers = svg
-      .selectAll(".cursor-data-marker")
-      .data(self.state.indicators || []);
+    const filtered = filter(this.state.indicators, (indicator) => {
+      if (columnIndex === 0) {
+        return (
+          indicator.indicatorId === 2 ||
+          indicator.indicatorId === 5 ||
+          indicator.indicatorId === 4
+        );
+      }
+      return indicator.indicatorId === 12 || indicator.indicatorId === 13;
+    });
+
+    const markers = svg.selectAll(".cursor-data-marker").data(filtered || []);
 
     d3.selectAll("#tooltip").remove();
-
-    const tooltip = d3
-      .select("#root")
-      .append("div")
-      .attr("id", "tooltip")
-      .style("position", "absolute")
-      .style("background-color", "#D3D3D3")
-      .style("padding", 6)
-      .style("display", "none");
 
     markers
       .enter()
@@ -129,7 +137,7 @@ class LineChart extends React.Component {
       .attr("class", "cursor-data-marker")
       .attr("pointer-events", "none")
       .attr("r", 6)
-      .attr("transform", "translate(110, 0)")
+      .attr("transform", `translate(${offsetX}, 10)`)
       .attr("fill", (_, i) => colors(i))
       .style("display", "none");
 
@@ -204,7 +212,7 @@ class LineChart extends React.Component {
         const index = bisect(linePoints, y0, 1);
         const data = linePoints[index] || [];
 
-        return `translate(${x(data.x) + 110}, ${y(data.y * 1000)})`;
+        return `translate(${x(data.x) + offsetX}, ${y(data.y * 1000)})`;
       });
 
       svg
@@ -241,7 +249,7 @@ class LineChart extends React.Component {
           const index = bisect(linePoints, y0, 1);
           const data = linePoints[index] || [];
 
-          return `translate(${120}, ${y(data.y * 1000)})`;
+          return `translate(${offsetX}, ${y(data.y * 1000)})`;
         })
         .html((indicator, idx) => {
           const indicatorOptions = find(indicatorsStatic, {
@@ -276,7 +284,7 @@ class LineChart extends React.Component {
           const data = linePoints[index] || [];
           const format = d3.utcFormat("%d-%m-%Y %H:%M:%S");
           return (
-            <tspan x={5} y={indicatorOptions.id * 10 + 10}>
+            <tspan x={5} y={indicatorOptions.id * 5}>
               {data.x} / {format(data.y * 1000)}
             </tspan>
           );
@@ -285,7 +293,7 @@ class LineChart extends React.Component {
       self.props.drawFauxDOM();
     });
 
-    this.state.indicators.map((indicator, index) => {
+    filtered.map((indicator, index) => {
       const points = indicator.values.reduce((acc, current) => {
         acc.push({ x: current.x1, y: current.y });
 
@@ -327,7 +335,7 @@ class LineChart extends React.Component {
       svg
         .append("path")
         .attr("class", "line")
-        .attr("transform", `translate(110, 0)`)
+        .attr("transform", `translate(${offsetX}, 0)`)
         .attr("fill", "none")
         .attr("stroke", colors(index))
         .attr("stroke-width", 2)
@@ -337,7 +345,7 @@ class LineChart extends React.Component {
   }
 
   render() {
-    const { index, style } = this.props;
+    const { columnIndex, rowIndex, style } = this.props;
 
     return (
       <div style={style}>

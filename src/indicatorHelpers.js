@@ -230,3 +230,5 @@ export const indicators = flattened.map((indicator) => {
     title: "Тултип",
   };
 });
+
+export const visibleIndicators = [[4, 5, 2], [13, 12], [5]];
