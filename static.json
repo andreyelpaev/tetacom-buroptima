@@ -1,0 +1,7 @@
+{
+    "root": "build/",
+    "routes": {
+      "/**": "index.html",
+      "/.well-known/pki-validation": "F8A82D2654E6EF9CCC948B67193A87AD.txt"
+    }
+  }
